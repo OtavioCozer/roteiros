@@ -1,0 +1,7 @@
+matplotlib
+Pillow
+tensorflow
+pyyaml
+h5py
+opencv-contrib-python
+imutils
