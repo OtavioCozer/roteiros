@@ -34,19 +34,25 @@ if __name__ == '__main__':
     cv2.namedWindow("webcam")
     vc = cv2.VideoCapture(0)
     rval, frame = vc.read()
-    H0, H1, H = [], [], []
 
     while rval:
         rval, frame = vc.read()  # fetch frame from webcam
         key = cv2.waitKey(1)
+        shoot1, shoot2 = 0, 0
         if key == 27:  # Escape key to exit the program
             break
+        if key == ord('a'):
+            shoot2 = 1
+        elif key == ord('l'):
+            shoot1 = 1
 
         corners, ids, rejectedImgPoints = arucoDetecter.detectMarkers(frame)
-        
+        H0, H1, H = [], [], []
+
         if ids is not None:
             ids = ids.ravel()
-            i0 = np.where(ids == 0)[0].ravel()
+            
+            i0 = np.where(ids == 3)[0].ravel()
             i1 = np.where(ids == 2)[0].ravel()
 
             if len(i0) > 0:
@@ -54,26 +60,30 @@ if __name__ == '__main__':
                 dst_pts0 = corners[i]
                 src_pts0 = np.array(
                     [[0, 0], [480, 0], [480, 480], [0, 480]], dtype="float32")
-                H, _ = cv2.findHomography(src_pts0, dst_pts0, cv2.RANSAC, 5.0)
-                H0 = H if len(H) > 0 else H0
+                H0, _ = cv2.findHomography(src_pts0, dst_pts0, cv2.RANSAC, 5.0)
 
             if len(i1) > 0:
                 i = i1[0]
                 dst_pts0 = corners[i]
                 src_pts0 = np.array(
                     [[0, 0], [480, 0], [480, 480], [0, 480]], dtype="float32")
-                H, _ = cv2.findHomography(src_pts0, dst_pts0, cv2.RANSAC, 5.0)
-                H1 = H if len(H) > 0 else H1
+                H1, _ = cv2.findHomography(src_pts0, dst_pts0, cv2.RANSAC, 5.0)
 
+        R_T1, R_T2 = None, None
+        transformation1, transformation2 = None, None
         if len(H1) > 0:
-            print(H1)
-            R_T = get_extended_RT(A, H1)
-            transformation = A.dot(R_T)
-            frame = augment(frame, obj, transformation, 480, 480, 100)
+            R_T1 = get_extended_RT(A, H1)
+            transformation1 = A.dot(R_T1)
 
         if len(H0) > 0:
-            R_T = get_extended_RT(A, H0)
-            transformation = A.dot(R_T)
-            frame = augment(frame, obj, transformation, 480, 480, 100)
+            R_T2 = get_extended_RT(A, H0)
+            transformation2 = A.dot(R_T2)
+
+        if len(H1) > 0:
+            frame = augment1(frame, obj, transformation1, 480, 480, shoot1, transformation2, 100,)
+
+        if len(H0) > 0:
+            frame = augment2(frame, obj, transformation2, 480, 480, shoot2, transformation1, 100,)
 
         cv2.imshow("webcam", frame)
+
