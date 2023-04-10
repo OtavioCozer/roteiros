@@ -27,47 +27,9 @@ SOFTWARE.
 #contains code to the .obj file and augment the object
 
 import cv2
+import copy
 import numpy as np
-
-def removeHomogenous(x):
-    y = []
-    for i in x:
-        i = i / i[-1]
-        i = i[0:-1]
-        i = [int(x) for x in i]
-        y.append(i)
-
-    return np.array(y)
-
-def insertHomogenous(x):
-    l, c = x.shape
-    c = c+1
-    temp = np.ones((l, c))
-    temp[:, :3] = x
-    return temp
-
-def augment(img, obj, projection, h, w, scale = 1):
-    vertices = obj.vertices
-
-    a = np.array([[0,0,0,1], [w, 0, 0, 1],  [w,h,0,1],  [0, h, 0, 1]], np.float64 )
-    imgpts = np.dot(projection, a.T).T
-    imgpts = removeHomogenous(imgpts)
-    cv2.fillConvexPoly(img, imgpts, (0,0,0))
-
-    for face in obj.faces:
-        face_vertices = face[0]
-        
-        points = np.array([vertices[vertex - 1] for vertex in face_vertices])
-        points = scale*points
-        points = insertHomogenous(points)
-        points = np.array([[p[2] + w/2, p[0] + h/2, p[1], p[3]] for p in points]) #shifted to centre 
-
-        dst = np.dot(projection, points.T).T
-        
-        imgpts = removeHomogenous(dst)
-        cv2.fillConvexPoly(img, imgpts, face[-1])
-        
-    return img
+import time
 
 class three_d_object:
     def __init__(self, filename_obj, filename_texture, color_fixed = False):
@@ -76,6 +38,9 @@ class three_d_object:
         self.faces = []
         #each face is a list of [lis_vertices, lis_texcoords, color]
         self.texcoords = []
+        self.time = 0
+
+        self.position = np.array([[1,0,0,400], [0,1,0,250], [0,0,1,200], [0,0,0,1]], np.float64)
 
         for line in open(filename_obj, "r"):
             if line.startswith('#'): 
@@ -114,9 +79,12 @@ class three_d_object:
             if not color_fixed:
                 f.append(three_d_object.decide_face_color(f[-1], self.texture, self.texcoords))
             else:
-                f.append((50, 50, 50)) #default color
+                f.append((255, 0, 0)) #default color
 
         # cv2.imwrite('texture_marked.png', self.texture)
+
+    def move(self, qtd):
+        self.position[0, 3] = self.position[0, 3] + qtd
 
     def decide_face_color(hex_color, texture, textures):
         #doesnt use proper texture
@@ -148,3 +116,172 @@ class three_d_object:
         col = [int(a) for a in col]
         col = tuple(col)
         return (col)
+
+
+def removeHomogenous(x):
+    y = []
+    for i in x:
+        i = i / i[-1]
+        i = i[0:-1]
+        i = [int(x) for x in i]
+        y.append(i)
+
+    return np.array(y)
+
+def insertHomogenous(x):
+    l, c = x.shape
+    c = c+1
+    temp = np.ones((l, c))
+    temp[:, :3] = x
+    return temp
+
+
+cube = three_d_object('data/cube/cube.obj', 'data/Hulk/hulk.png', color_fixed=True)
+
+bullet1 = None
+bullet2 = None
+dieTime = 10000
+
+def augment1(img, obj, projection, h, w, shoot, t2, scale = 1):
+    vertices = obj.vertices
+
+    a = np.array([[0,0,0,1], [w, 0, 0, 1],  [w,h,0,1],  [0, h, 0, 1]], np.float64 )
+    imgpts = np.dot(projection, a.T).T
+    imgpts = removeHomogenous(imgpts)
+
+    cv2.fillConvexPoly(img, imgpts, (0,0,0))
+    drawBullet1(img, projection, shoot)
+
+    for face in obj.faces:
+        face_vertices = face[0]
+        
+        points = np.array([vertices[vertex - 1] for vertex in face_vertices])
+        points = scale*points
+        points = insertHomogenous(points)
+        points = np.array([[p[2] + w/2, p[0] + h/2, p[1], p[3]] for p in points]) #shifted to centre 
+
+        global bullet2
+        if bullet2 is not None and t2 is not None:
+            opos = np.array([0,0,0,1])
+            opos = np.dot(projection, opos.T).T
+            bpos = np.array([0,0,0,1])
+            bpos = np.dot(t2, np.dot(bullet2.position, bpos.T)).T
+
+            opos = opos/opos[2]
+            bpos = bpos/bpos[2]
+            d = np.linalg.norm(bpos-opos)
+            # print(d)
+            
+            if d < 150:
+                print(f"hit b2 {time.time()}")
+                bullet2 = None
+            # print(f"bpos: {bpos}")
+            # print(f"opos: {opos}")
+
+        dst = np.dot(projection, points.T).T
+        
+        imgpts = removeHomogenous(dst)
+        cv2.fillConvexPoly(img, imgpts, face[-1])
+        
+    return img
+
+def augment2(img, obj, projection, h, w, shoot, t1, scale = 1):
+    vertices = obj.vertices
+
+    a = np.array([[0,0,0,1], [w, 0, 0, 1],  [w,h,0,1],  [0, h, 0, 1]], np.float64 )
+    imgpts = np.dot(projection, a.T).T
+    imgpts = removeHomogenous(imgpts)
+
+    cv2.fillConvexPoly(img, imgpts, (0,0,0))
+    drawBullet2(img, projection, shoot)
+
+    for face in obj.faces:
+        face_vertices = face[0]
+        
+        points = np.array([vertices[vertex - 1] for vertex in face_vertices])
+        points = scale*points
+        points = insertHomogenous(points)
+        points = np.array([[p[2] + w/2, p[0] + h/2, p[1], p[3]] for p in points]) #shifted to centre 
+
+        global bullet1
+        if bullet1 is not None and t1 is not None:
+            opos = np.array([0,0,0,1])
+            opos = np.dot(projection, opos.T).T
+            bpos = np.array([0,0,0,1])
+            bpos = np.dot(t1, np.dot(bullet1.position, bpos.T)).T
+
+            opos = opos/opos[2]
+            bpos = bpos/bpos[2]
+            d = np.linalg.norm(bpos-opos)
+            # print(d)
+            if d < 150:
+                print(f"hit b1 {time.time()}")
+                bullet1 = None
+            # print(f"bpos: {bpos}")
+            # print(f"opos: {opos}")
+            
+
+        dst = np.dot(projection, points.T).T
+        
+        imgpts = removeHomogenous(dst)
+        cv2.fillConvexPoly(img, imgpts, face[-1])
+        
+    return img
+
+
+def drawBullet1(img, projection, shoot):
+    global bullet1
+    if bullet1 is None and shoot != 0:
+        bullet1 = copy.deepcopy(cube)
+        bullet1.time = time.time()
+    
+    if bullet1 is not None:
+        passedTime = time.time() - bullet1.time
+        bullet1.move(passedTime*500)
+        if passedTime > 3:
+            bullet1 = None
+            return
+        
+        vertices = bullet1.vertices
+        for face in bullet1.faces:
+            face_vertices = face[0]
+            
+            points = np.array([vertices[vertex - 1] for vertex in face_vertices])
+            points = 20*points
+            points = insertHomogenous(points)
+            points = np.array([[p[0], p[1], p[2], p[3]] for p in points]) #shifted to centre 
+
+            dst = np.dot(bullet1.position, points.T).T
+            dst = np.dot(projection, dst.T).T
+            
+            imgpts = removeHomogenous(dst)
+            cv2.fillConvexPoly(img, imgpts, face[-1])
+
+
+def drawBullet2(img, projection, shoot):
+    global bullet2
+    if bullet2 is None and shoot != 0:
+        bullet2 = copy.deepcopy(cube)
+        bullet2.time = time.time()
+
+    if bullet2 is not None:
+        passedTime = time.time() - bullet2.time
+        bullet2.move(passedTime*2000)
+        if passedTime > 3:
+            bullet2 = None
+            return
+        
+        vertices = bullet2.vertices
+        for face in bullet2.faces:
+            face_vertices = face[0]
+            
+            points = np.array([vertices[vertex - 1] for vertex in face_vertices])
+            points = 20*points
+            points = insertHomogenous(points)
+            points = np.array([[p[0], p[1], p[2], p[3]] for p in points]) #shifted to centre 
+
+            dst = np.dot(bullet2.position, points.T).T
+            dst = np.dot(projection, dst.T).T
+            
+            imgpts = removeHomogenous(dst)
+            cv2.fillConvexPoly(img, imgpts, face[-1])
